@@ -9,14 +9,20 @@ from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 import requests
 import time
-
+import googleapiclient.discovery
+from googleapiclient.discovery import build
+import pyaudio
+import numpy as np 
+import silence_tensorflow
+from silence_tensorflow import silence_tensorflow
+#from silence_tensorflow import SilenceModel
 # Load environment variables from .env file
 load_dotenv()
 
 # Load API keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-ELEVENLABS_API_KEY = os.getenv("eleven_api_key")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 CSE_ID = os.getenv("CSE_ID")
 
 # Configure OpenAI
@@ -28,32 +34,43 @@ STABILITY = 0.5
 SIMILARITY_BOOST = 0.5
 
 
-def listen():
-    """Listens to the user's voice input and returns the recognized text."""
+def listen(timeout=3, phrase_time_limit=5):
+    """Listens for user input using a microphone and returns the recognized text."""
     recognizer = sr.Recognizer()
+    recognizer.dynamic_energy_threshold = True
+    recognizer.energy_threshold = 300
+
     with sr.Microphone() as source:
+        recognizer.adjust_for_ambient_noise(source, duration=1)
         print("Listening...")
-        audio = recognizer.listen(source)
+        try:
+            audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_time_limit)
+        except sr.WaitTimeoutError:
+            print("No speech detected within the timeout period")
+            return None
 
     try:
-        print("Recognizing...")
-        command = recognizer.recognize_google(audio)
-        print(f"User said: {command}")
-    except Exception as e:
-        print("Sorry, I couldn't understand that.")
-        return None
+        text = recognizer.recognize_google(audio)
+        print(f"User said: {text}")
+        return text
+    except sr.UnknownValueError:
+        print("Google Speech Recognition could not understand the audio")
+    except sr.RequestError as e:
+        print(f"Could not request results from Google Speech Recognition service; {e}")
 
-    return command
+    return None
 
 
-def elevenlabs_speak(text, voice_id, stability, similarity_boost, eleven_api_key):
+
+
+def elevenlabs_speak(text, voice_id, stability, similarity_boost, ELEVENLABS_API_KEY, volume=1.5):
     """Converts the given text to speech using ElevenLabs API and plays the audio."""
     tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
 
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "xi-api-key": eleven_api_key,
+        "xi-api-key": ELEVENLABS_API_KEY,
     }
 
     data = {
@@ -76,6 +93,7 @@ def elevenlabs_speak(text, voice_id, stability, similarity_boost, eleven_api_key
 
     # Play the generated audio using an audio player of your choice.
     pygame.mixer.init()
+    pygame.mixer.music.set_volume(volume)  # Set the volume
     pygame.mixer.music.load(audio_data)
     pygame.mixer.music.play()
     while pygame.mixer.music.get_busy():
@@ -110,40 +128,40 @@ def main():
     while True:
         print("Waiting for activation command...")
         command = listen()
-        if command is None:
+
+        if command is None or "adam" not in command.lower():
             continue
 
-        command = command.lower()
-        if "adam" in command or "adam power on" in command or "power on" in command:
-            elevenlabs_speak("Hello Sir, how can I help you?", VOICE_ID, STABILITY, SIMILARITY_BOOST, eleven_api_key)
-            break
+        elevenlabs_speak("Hello Sir, how can I help you?", VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
 
-    while True:
-        command = listen()
-        if command is None:
-            continue
+        while True:
+            command = listen(phrase_time_limit=25)  # Increase the phrase_time_limit to 10 seconds
+            if command is None:
+                break
 
-        command = command.lower()
+            command = command.lower()
 
-        if "search" in command or "search online" in command:
-            query = command.replace("search", "").strip()
-            search_results = google_search(query, GOOGLE_API_KEY, CSE_ID)
-            items = search_results.get('items', [])
+            if "search" in command or "search online" in command:
+                query = command.replace("search", "").strip()
+                search_results = google_search(query, GOOGLE_API_KEY, CSE_ID)
+                items = search_results.get('items', [])
 
-            if len(items) > 0:
-                num_results = min(3, len(items))
-                elevenlabs_speak(f"Here are the top {num_results} search results for {query}", VOICE_ID, STABILITY, SIMILARITY_BOOST, eleven_api_key)
-                for i, result in enumerate(items[:num_results]):
-                    elevenlabs_speak(f"Result {i+1}: {result['title']}", VOICE_ID, STABILITY, SIMILARITY_BOOST, eleven_api_key)
-                    elevenlabs_speak(result['snippet'], VOICE_ID, STABILITY, SIMILARITY_BOOST, eleven_api_key)
+                if len(items) > 0:
+                    num_results = min(3, len(items))
+                    elevenlabs_speak(f"Here are the top {num_results} search results for {query}", VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
+                    for i, result in enumerate(items[:num_results]):
+                        elevenlabs_speak(f"Result {i+1}: {result['title']}", VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
+                        elevenlabs_speak(result['snippet'], VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
+                else:
+                    elevenlabs_speak(f"Sorry, I couldn't find any search results for {query}", VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
+            elif "exit" in command or "power down" in command or "thank you adam. power down" in command:
+                elevenlabs_speak("Thank you.", VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
+                return
             else:
-                elevenlabs_speak(f"Sorry, I couldn't find any search results for {query}", VOICE_ID, STABILITY, SIMILARITY_BOOST, eleven_api_key)
-        elif "exit" in command or "power down" in command or "thank you adam. power down" in command:
-            elevenlabs_speak("Thank you.", VOICE_ID, STABILITY, SIMILARITY_BOOST, eleven_api_key)
-            break
-        else:
-            response = ask_openai(command)
-            elevenlabs_speak(response, VOICE_ID, STABILITY, SIMILARITY_BOOST, eleven_api_key)
-
+                response = ask_openai(command)
+                elevenlabs_speak(response, VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
+                elevenlabs_speak("Feel free to ask another question.", VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
+                elevenlabs_speak("Free free to ask another question later: reactivate me with the command Adam activate", VOICE_ID, STABILITY, SIMILARITY_BOOST, ELEVENLABS_API_KEY)
 if __name__ == "__main__":
     main()
+
