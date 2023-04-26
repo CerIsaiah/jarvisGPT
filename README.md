@@ -14,10 +14,15 @@ Adam is a personal voice assistant that uses speech recognition, text-to-speech,
 
 ## 🎯 How to Use 
 Set up your API keys for OpenAI, Google, and ElevenLabs using the .env.template file. After changing values rename the template to .env
+
 Run the script with python adam.py.
+
 Wait for the "Waiting for activation command..." prompt.
+
 Say "Adam activate" to start interacting with your voice assistant.
+
 Ask questions or give commands like "search online" followed by your query.
+
 To deactivate Adam, say "Exit" or "Power down".
 
 ## 📚 Functions  
