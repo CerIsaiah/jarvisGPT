@@ -1,4 +1,4 @@
-**###🤖 Adam - Your Personal Voice Assistant 🎙️**
+###**🤖 Adam - Your Personal Voice Assistant 🎙️**
 Adam is a personal voice assistant that uses speech recognition, text-to-speech, and various APIs to answer your questions and perform online searches. 🌐
 
 ##🚀 Features
